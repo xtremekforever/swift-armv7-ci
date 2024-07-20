@@ -1,0 +1,140 @@
+From 1e2982ed4a418e176430ad22904a76202da8c93e Mon Sep 17 00:00:00 2001
+From: "Jesse L. Zamora" <xtremekforever@gmail.com>
+Date: Sat, 20 Jul 2024 08:28:50 -0400
+Subject: [PATCH] Add patches + buildbot for Swift 5.10 on armv7
+
+---
+ cmake/modules/SwiftConfigureSDK.cmake         |  2 +-
+ utils/build-presets.ini                       | 73 +++++++++++++++++++
+ utils/build-script-impl                       |  4 +
+ .../swift_build_support/products/product.py   |  2 +-
+ 4 files changed, 79 insertions(+), 2 deletions(-)
+
+diff --git a/cmake/modules/SwiftConfigureSDK.cmake b/cmake/modules/SwiftConfigureSDK.cmake
+index 2d4f798bb11..9c8560a64a2 100644
+--- a/cmake/modules/SwiftConfigureSDK.cmake
++++ b/cmake/modules/SwiftConfigureSDK.cmake
+@@ -322,7 +322,7 @@ macro(configure_sdk_unix name architectures)
+   # depending on the architecture, so having a single value is the only
+   # possibility right now.
+   set(SWIFT_SDK_${prefix}_CXX_OVERLAY_SWIFT_COMPILE_FLAGS
+-      -Xcc --gcc-toolchain=/usr
++      -Xcc --gcc-toolchain=${CMAKE_SYSROOT}/usr
+     CACHE STRING "Extra flags for compiling the C++ overlay")
+ 
+   set(_default_threading_package "pthreads")
+diff --git a/utils/build-presets.ini b/utils/build-presets.ini
+index a8683614afe..d5ff16e93a3 100644
+--- a/utils/build-presets.ini
++++ b/utils/build-presets.ini
+@@ -1105,6 +1105,79 @@ lit-args=-v
+ indexstore-db=0
+ sourcekit-lsp=0
+ 
++[preset: buildbot_linux_crosscompile_armv7,llvm]
++release
++reconfigure
++
++# Disable features
++build-swift-tools=0
++
++# Skip rules
++skip-build-cmark
++skip-early-swiftsyntax
++skip-build-llvm
++skip-build-swift
++
++build-subdir=buildbot_linux_armv7
++
++[preset: buildbot_linux_crosscompile_armv7,stdlib,corelibs]
++mixin-preset=stdlib_base_standalone
++release
++reconfigure
++
++install-swift
++install-swiftsyntax
++foundation
++libdispatch
++xctest
++install-foundation
++install-libdispatch
++install-xctest
++
++# NOTE: Backtracing does not cross compile for armv7 currently
++swift-enable-backtracing=0
++swift-stdlib-supports-backtrace-reporting=0
++
++swift-install-components=autolink-driver;compiler;clang-builtin-headers;libexec;stdlib;swift-remote-mirror;sdk-overlay;dev
++build-swift-static-stdlib
++build-swift-static-sdk-overlay
++
++# Cross compilation
++skip-local-build
++cross-compile-hosts=linux-armv7
++cross-compile-deps-path=%(sysroot)s
++cross-compile-append-host-target-to-destdir=False
++
++build-subdir=buildbot_linux_armv7
++
++# Custom flags for cross compilation
++extra-cmake-options=
++    -DCMAKE_C_FLAGS="-w -fuse-ld=lld -target armv7-unknown-linux-gnueabihf --sysroot=%(sysroot)s"
++    -DCMAKE_CXX_FLAGS="-w -fuse-ld=lld -target armv7-unknown-linux-gnueabihf --sysroot=%(sysroot)s"
++    -DCMAKE_ASM_FLAGS="-target armv7-unknown-linux-gnueabihf --sysroot=%(sysroot)s"
++
++# Set Swift flags to cross compile deps for armv7
++common-swift-flags="-use-ld=lld -target armv7-unknown-linux-gnueabihf -resource-dir %(workspace_dir)s/build/buildbot_linux_armv7/swift-linux-armv7/lib/swift -sdk %(sysroot)s"
++
++# Use lld for building Swift, set extra flags and sysroot paths
++swift-cmake-options=
++    -DSWIFT_USE_LINKER=lld
++    -DSWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY=ON
++    -DSWIFT_ENABLE_EXPERIMENTAL_CXX_INTEROP=ON
++    -DSWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=ON
++    -DSWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=ON
++    -DSWIFT_ENABLE_EXPERIMENTAL_OBSERVATION=ON
++    -DCMAKE_SYSROOT=%(sysroot)s
++    -DSWIFT_SDK_LINUX_ARCH_armv7_PATH=%(sysroot)s
++
++install-prefix=/usr
++
++# Path to the root of the installation filesystem.
++install-destdir=%(install_destdir)s
++
++# Path to the .tar.gz package we would create.
++installable-package=%(installable_package)s
++
+ [preset: buildbot_linux_armv7]
+ release
+ llbuild
+diff --git a/utils/build-script-impl b/utils/build-script-impl
+index a7a11e9936c..24e29c0f0ac 100755
+--- a/utils/build-script-impl
++++ b/utils/build-script-impl
+@@ -1386,6 +1386,10 @@ function common_swift_flags() {
+         echo "error: a module cache path has not been set"
+         exit 1
+     fi
++
++    # Remove quotes from COMMON_SWIFT_FLAGS before using it
++    COMMON_SWIFT_FLAGS=`echo ${COMMON_SWIFT_FLAGS} | xargs`
++
+     echo -n "${SWIFT_FLAGS[@]} ${COMMON_SWIFT_FLAGS} -module-cache-path \"${module_cache}\" "
+ }
+ 
+diff --git a/utils/swift_build_support/swift_build_support/products/product.py b/utils/swift_build_support/swift_build_support/products/product.py
+index 927263f52d9..120dda4ac9f 100644
+--- a/utils/swift_build_support/swift_build_support/products/product.py
++++ b/utils/swift_build_support/swift_build_support/products/product.py
+@@ -370,7 +370,7 @@ class Product(object):
+     def get_linux_sysroot(self, platform, arch):
+         if not self.is_cross_compile_target('{}-{}'.format(platform, arch)):
+             return None
+-        sysroot_arch, abi = self.get_linux_target_components(arch)
++        sysroot_arch, _, abi = self.get_linux_target_components(arch)
+         # $ARCH-$PLATFORM-$ABI
+         # E.x.: aarch64-linux-gnu
+         sysroot_dirname = '{}-{}-{}'.format(sysroot_arch, platform, abi)
+-- 
+2.34.1
+
