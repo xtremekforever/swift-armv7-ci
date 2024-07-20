@@ -6,7 +6,7 @@ SRC_ROOT=$(pwd)
 WORKSPACE_DIR=$SRC_ROOT/workspace
 
 CONTAINER_NAME=swift-armv7-sysroot
-DISTRIUBTION=${DISTRIUBTION:=debian:bookworm}
+DISTRIUBTION=$1
 
 case $DISTRIUBTION in
     # Not working yet- finding Threads issue
