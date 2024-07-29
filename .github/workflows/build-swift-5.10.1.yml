@@ -1,0 +1,99 @@
+# This workflow will build a Swift project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
+
+name: Build Swift 5.10.1
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  SWIFT_TAG: swift-5.10.1-RELEASE
+  SWIFT_WORKSPACE_CACHE: swift-5.10.1-workspace
+  SWIFT_BUILDER_CONTAINER: xtremekforever/swift-builder:5.10.1-gh-runner
+  DEBIAN_BOOKWORM_SYSROOT_ID: sysroot-debian-bookworm
+  DEBIAN_BOOKWORM_SYSROOT_NAME: sysroot-debian-bookworm-armv7
+
+jobs:
+  fetch-sources:
+    name: Fetch Swift Sources
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache Workspace Dir
+      id: cache-workspace
+      uses: actions/cache@v4
+      with:
+        key: ${{ env.SWIFT_WORKSPACE_CACHE }}
+        path: workspace
+        lookup-only: true
+
+    # Prerequisites for all builds
+    - if: ${{ steps.cache-workspace.outputs.cache-hit != 'true' }}
+      name: Checkout Sources
+      run: ./checkout-5.10.sh
+
+  sysroot-debian-bookworm:
+    name: Sysroot for Debian Bookworm
+    runs-on: ubuntu-latest
+    steps:
+    - name: Restore Sysroot
+      id: cache-sysroot
+      uses: actions/cache@v4
+      with:
+        key: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
+        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}
+
+    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
+      uses: actions/checkout@v4
+    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
+      name: Build
+      run: ./build-sysroot.sh debian:bookworm $DEBIAN_BOOKWORM_SYSROOT_NAME
+
+    - name: Compress
+      run: tar -czf $DEBIAN_BOOKWORM_SYSROOT_NAME.tar.gz $DEBIAN_BOOKWORM_SYSROOT_NAME
+    - uses: actions/upload-artifact@v4
+      name: Publish
+      with:
+        name: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
+        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}.tar.gz
+
+  debian-bookworm:
+    name: Build for Debian Bookworm
+    runs-on: ubuntu-latest
+    needs: [fetch-sources, sysroot-debian-bookworm]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Restore Workspace Dir
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ env.SWIFT_WORKSPACE_CACHE }}
+        path: workspace
+        fail-on-cache-miss: true
+
+    - name: Restore Sysroot
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
+        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}
+        fail-on-cache-miss: true
+
+    - name: Build Swift for Debian Bookworm
+      run: |
+        docker run --rm \
+          --user runner \
+          --workdir ${{ github.workspace }} \
+          -v $HOME:$HOME \
+          -e INSTALLABLE_PACKAGE=$(pwd)/$SWIFT_TAG-debian-bookworm-armv7.tar.gz \
+          $SWIFT_BUILDER_CONTAINER \
+          /bin/bash ./build-swift.sh $DEBIAN_BOOKWORM_SYSROOT_NAME
+
+    - uses: actions/upload-artifact@v4
+      name: Publish
+      with:
+        name: swift-debian-bookworm
+        path: ${{ env.SWIFT_TAG }}-debian-bookworm-armv7.tar.gz
