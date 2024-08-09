@@ -5,7 +5,7 @@ name: Build Swift 5.10.1
 
 on:
   push:
-    branches: [ "main", "feature/**" ]
+    branches: [ "feature/swift-5.10.1**" ]
   pull_request:
     branches: [ "main" ]
 
