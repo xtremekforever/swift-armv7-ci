@@ -19,4 +19,49 @@ Since it is currently not possible to build the entire Swift toolchain for armv7
 - foundation
 - xctest
 
-Using the files generated from the CI runs or release files, SDKs can be assembled.
+Using the files generated from the CI runs or release files, cross-compilation SDKs can be assembled.
+
+## Building an SDK
+
+Although the [swift-sdk-generator](https://github.com/swiftlang/swift-sdk-generator) project can be used to generate cross-compilation toolchains, it is currently only compatible with macOS hosts. There is ongoing work to get it working for Linux hosts properly, but until then the cross-compilation SDKs can be generated manually and use the `destination.json` style of files.
+
+First, start by extracting the Swift build and sysroot for the given distribution and placing them into a directory. For example, for `swift-5.10.1-RELEASE-debian-bookworm-armv7`, structure the directories as follows:
+
+```
+swift-5.10.1-RELEASE-debian-bookworm-armv7
+├── sysroot
+│   ├── lib -> usr/lib
+│   └── usr
+└── usr
+    ├── bin
+    ├── lib
+    └── share
+```
+
+Then, create a destination.json file with the following contents:
+
+```json
+{
+    "version":1,
+    "sdk":"/path/to/swift-5.10.1-RELEASE-debian-bookworm-armv7/sysroot",
+    "toolchain-bin-dir":"/usr/bin",
+    "target":"armv7-unknown-linux-gnueabihf",
+    "dynamic-library-extension":"so",
+    "extra-cc-flags":[
+       "-fPIC"
+    ],
+    "extra-swiftc-flags":[
+       "-target", "armv7-unknown-linux-gnueabihf",
+       "-use-ld=lld",
+       "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift/linux",
+       "-Xlinker", "-rpath", "-Xlinker", "/usr/lib/swift/linux/armv7",
+       "-resource-dir", "/path/to/swift-5.10.1-RELEASE-debian-bookworm-armv7/usr/lib/swift",
+       "-sdk", "/path/to/swift-5.10.1-RELEASE-debian-bookworm-armv7/sysroot",
+       "-Xcc", "--gcc-toolchain=/path/to/swift-5.10.1-RELEASE-debian-bookworm-armv7/sysroot/usr"
+    ],
+    "extra-cpp-flags":[
+    ]
+}
+```
+
+Replace the `/path/to/` paths with the actual path where the SDK will be installed. Ideally this could be at `/opt` for example.
