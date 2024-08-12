@@ -66,7 +66,7 @@ index a8683614afe..0489542ca7e 100644
 +# NOTE: Backtracing does not cross compile for armv7 currently
 +swift-enable-backtracing=0
 +
-+swift-install-components=clang-resource-dir-symlink;license;stdlib;swift-remote-mirror;sdk-overlay
++swift-install-components=clang-builtin-headers;compiler;license;stdlib;swift-remote-mirror;sdk-overlay
 +build-swift-static-stdlib
 +
 +# Cross compilation
