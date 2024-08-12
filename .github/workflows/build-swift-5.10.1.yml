@@ -8,17 +8,11 @@ on:
     branches: [ "feature/swift-5.10.1**" ]
   pull_request:
     branches: [ "main" ]
-
+  
 env:
   SWIFT_TAG: swift-5.10.1-RELEASE
   SWIFT_WORKSPACE_CACHE: swift-5.10.1-workspace
-  SWIFT_BUILDER_CONTAINER: xtremekforever/swift-builder:5.10.1-gh-runner
-  DEBIAN_BOOKWORM_SYSROOT_ID: sysroot-debian-bookworm
-  DEBIAN_BOOKWORM_SYSROOT_NAME: sysroot-debian-bookworm-armv7
-  UBUNTU_JAMMY_SYSROOT_ID: sysroot-ubuntu-jammy
-  UBUNTU_JAMMY_SYSROOT_NAME: sysroot-ubuntu-jammy-armv7
-  UBUNTU_NOBLE_SYSROOT_ID: sysroot-ubuntu-noble
-  UBUNTU_NOBLE_SYSROOT_NAME: sysroot-ubuntu-noble-armv7
+  SWIFT_BUILDER_TAG: 5.10.1-gh-runner
 
 jobs:
   fetch-sources:
@@ -37,79 +31,14 @@ jobs:
       name: Checkout Sources
       run: ./checkout-5.10.sh
 
-  sysroot-debian-bookworm:
-    name: Sysroot for Debian Bookworm
-    runs-on: ubuntu-latest
-    steps:
-    - name: Restore Sysroot
-      id: cache-sysroot
-      uses: actions/cache@v4
-      with:
-        key: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
-        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      uses: actions/checkout@v4
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      name: Build
-      run: ./build-sysroot.sh debian:bookworm $DEBIAN_BOOKWORM_SYSROOT_NAME
-    - name: Compress
-      run: tar -czf $DEBIAN_BOOKWORM_SYSROOT_NAME.tar.gz $DEBIAN_BOOKWORM_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
-      with:
-        name: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
-        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}.tar.gz
-
-  sysroot-ubuntu-jammy:
-    name: Sysroot for Ubuntu Jammy
-    runs-on: ubuntu-latest
-    steps:
-    - name: Restore Sysroot
-      id: cache-sysroot
-      uses: actions/cache@v4
-      with:
-        key: ${{ env.UBUNTU_JAMMY_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_JAMMY_SYSROOT_NAME }}
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      uses: actions/checkout@v4
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      name: Build
-      run: ./build-sysroot.sh ubuntu:jammy $UBUNTU_JAMMY_SYSROOT_NAME
-    - name: Compress
-      run: tar -czf $UBUNTU_JAMMY_SYSROOT_NAME.tar.gz $UBUNTU_JAMMY_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
-      with:
-        name: ${{ env.UBUNTU_JAMMY_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_JAMMY_SYSROOT_NAME }}.tar.gz
-
-  sysroot-ubuntu-noble:
-    name: Sysroot for Ubuntu Noble
-    runs-on: ubuntu-latest
-    steps:
-    - name: Restore Sysroot
-      id: cache-sysroot
-      uses: actions/cache@v4
-      with:
-        key: ${{ env.UBUNTU_NOBLE_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_NOBLE_SYSROOT_NAME }}
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      uses: actions/checkout@v4
-    - if: ${{ steps.cache-sysroot.outputs.cache-hit != 'true' }}
-      name: Build
-      run: ./build-sysroot.sh ubuntu:noble $UBUNTU_NOBLE_SYSROOT_NAME
-    - name: Compress
-      run: tar -czf $UBUNTU_NOBLE_SYSROOT_NAME.tar.gz $UBUNTU_NOBLE_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
-      with:
-        name: ${{ env.UBUNTU_NOBLE_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_NOBLE_SYSROOT_NAME }}.tar.gz
-
   debian-bookworm:
     name: Build for Debian Bookworm
     runs-on: ubuntu-latest
-    needs: [fetch-sources, sysroot-debian-bookworm]
+    needs: [fetch-sources]
+    env:
+      SYSROOT_ID: sysroot-${{ github.job }}
+      SYSROOT_NAME: sysroot-${{ github.job }}-armv7
+      DISTRIBUTION: ${{ github.job }}
     steps:
     - uses: actions/checkout@v4
     - name: Restore Workspace Dir
@@ -118,28 +47,28 @@ jobs:
         key: ${{ env.SWIFT_WORKSPACE_CACHE }}
         path: workspace
         fail-on-cache-miss: true
-    - name: Restore Sysroot
-      uses: actions/cache/restore@v4
+    - uses: ./.github/actions/build-sysroot
+      name: Restore or Build Sysroot
       with:
-        key: ${{ env.DEBIAN_BOOKWORM_SYSROOT_ID }}
-        path: ${{ env.DEBIAN_BOOKWORM_SYSROOT_NAME }}
-        fail-on-cache-miss: true
-    - name: Build Swift
-      run: |
-        docker run --rm --user runner --workdir ${{ github.workspace }} -v $HOME:$HOME \
-          -e INSTALLABLE_PACKAGE=$(pwd)/$SWIFT_TAG-debian-bookworm-armv7.tar.gz \
-          $SWIFT_BUILDER_CONTAINER \
-          /bin/bash ./build-swift.sh $DEBIAN_BOOKWORM_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
+        sysroot-id: ${{ env.SYSROOT_ID }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+    - uses: ./.github/actions/build-swift
+      name: Build Swift
       with:
-        name: swift-debian-bookworm
-        path: ${{ env.SWIFT_TAG }}-debian-bookworm-armv7.tar.gz
+        swift-tag: ${{ env.SWIFT_TAG }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+        builder-tag: ${{ env.SWIFT_BUILDER_TAG }}
 
   ubuntu-jammy:
     name: Build for Ubuntu Jammy
     runs-on: ubuntu-latest
-    needs: [fetch-sources, sysroot-ubuntu-jammy]
+    needs: [fetch-sources]
+    env:
+      SYSROOT_ID: sysroot-${{ github.job }}
+      SYSROOT_NAME: sysroot-${{ github.job }}-armv7
+      DISTRIBUTION: ${{ github.job }}
     steps:
     - uses: actions/checkout@v4
     - name: Restore Workspace Dir
@@ -148,28 +77,28 @@ jobs:
         key: ${{ env.SWIFT_WORKSPACE_CACHE }}
         path: workspace
         fail-on-cache-miss: true
-    - name: Restore Sysroot
-      uses: actions/cache/restore@v4
+    - uses: ./.github/actions/build-sysroot
+      name: Restore or Build Sysroot
       with:
-        key: ${{ env.UBUNTU_JAMMY_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_JAMMY_SYSROOT_NAME }}
-        fail-on-cache-miss: true
-    - name: Build Swift
-      run: |
-        docker run --rm --user runner --workdir ${{ github.workspace }} -v $HOME:$HOME \
-          -e INSTALLABLE_PACKAGE=$(pwd)/$SWIFT_TAG-ubuntu-jammy-armv7.tar.gz \
-          $SWIFT_BUILDER_CONTAINER \
-          /bin/bash ./build-swift.sh $UBUNTU_JAMMY_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
+        sysroot-id: ${{ env.SYSROOT_ID }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+    - uses: ./.github/actions/build-swift
+      name: Build Swift
       with:
-        name: swift-ubuntu-jammy
-        path: ${{ env.SWIFT_TAG }}-ubuntu-jammy-armv7.tar.gz
+        swift-tag: ${{ env.SWIFT_TAG }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+        builder-tag: ${{ env.SWIFT_BUILDER_TAG }}
 
   ubuntu-noble:
     name: Build for Ubuntu Noble
     runs-on: ubuntu-latest
-    needs: [fetch-sources, sysroot-ubuntu-noble]
+    needs: [fetch-sources]
+    env:
+      SYSROOT_ID: sysroot-${{ github.job }}
+      SYSROOT_NAME: sysroot-${{ github.job }}-armv7
+      DISTRIBUTION: ${{ github.job }}
     steps:
     - uses: actions/checkout@v4
     - name: Restore Workspace Dir
@@ -178,20 +107,16 @@ jobs:
         key: ${{ env.SWIFT_WORKSPACE_CACHE }}
         path: workspace
         fail-on-cache-miss: true
-    - name: Restore Sysroot
-      uses: actions/cache/restore@v4
+    - uses: ./.github/actions/build-sysroot
+      name: Restore or Build Sysroot
       with:
-        key: ${{ env.UBUNTU_NOBLE_SYSROOT_ID }}
-        path: ${{ env.UBUNTU_NOBLE_SYSROOT_NAME }}
-        fail-on-cache-miss: true
-    - name: Build Swift
-      run: |
-        docker run --rm --user runner --workdir ${{ github.workspace }} -v $HOME:$HOME \
-          -e INSTALLABLE_PACKAGE=$(pwd)/$SWIFT_TAG-ubuntu-noble-armv7.tar.gz \
-          $SWIFT_BUILDER_CONTAINER \
-          /bin/bash ./build-swift.sh $UBUNTU_NOBLE_SYSROOT_NAME
-    - uses: actions/upload-artifact@v4
-      name: Publish
+        sysroot-id: ${{ env.SYSROOT_ID }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+    - uses: ./.github/actions/build-swift
+      name: Build Swift
       with:
-        name: swift-ubuntu-noble
-        path: ${{ env.SWIFT_TAG }}-ubuntu-noble-armv7.tar.gz
+        swift-tag: ${{ env.SWIFT_TAG }}
+        sysroot-name: ${{ env.SYSROOT_NAME }}
+        distribution: ${{ env.DISTRIBUTION }}
+        builder-tag: ${{ env.SWIFT_BUILDER_TAG }}
