@@ -6,7 +6,7 @@ SRC_ROOT=$(pwd)
 WORKSPACE_DIR=$SRC_ROOT/workspace
 
 INSTALL_DESTDIR=${INSTALL_DESTDIR:=$SRC_ROOT/install}
-INSTALLABLE_PACKAGE=${INSTALLABLE_PACKAGE:=$SRC_ROOT/swift-armv7.tar.gz}
+INSTALLABLE_PACKAGE=${INSTALLABLE_PACKAGE:=$SRC_ROOT/swift-armv7-install.tar.gz}
 
 SYSROOT=$1
 if [ -z $SYSROOT ]; then
@@ -38,3 +38,20 @@ cd $WORKSPACE_DIR
     sysroot=$SYSROOT \
     workspace_dir=$WORKSPACE_DIR \
     toolchain_path=$TOOLCHAIN_PATH
+
+# Post build step: fix locations of some modules
+echo "Fixing locations of Swift modules for armv7..."
+SWIFT_LINUX_DIR=$INSTALL_DESTDIR/usr/lib/swift/linux
+SWIFT_STATIC_LINUX_DIR=$INSTALL_DESTDIR/usr/lib/swift_static/linux
+if [ -d $SWIFT_LINUX_DIR/x86_64 ]; then
+    mv $SWIFT_LINUX_DIR/x86_64/* $SWIFT_LINUX_DIR/armv7
+    rm -r $SWIFT_LINUX_DIR/x86_64
+fi
+if [ -d $SWIFT_STATIC_LINUX_DIR/x86_64 ]; then
+    mv $SWIFT_STATIC_LINUX_DIR/x86_64/* $SWIFT_STATIC_LINUX_DIR/armv7
+    rm -r $SWIFT_STATIC_LINUX_DIR/x86_64
+fi
+
+echo "Recreating installable package..."
+cd $INSTALL_DESTDIR
+tar -czf $INSTALLABLE_PACKAGE .
