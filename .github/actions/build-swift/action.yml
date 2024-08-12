@@ -43,4 +43,4 @@ runs:
         name: ${{ inputs.swift-tag }}-${{ inputs.distribution }}
         path: |
           ${{ inputs.swift-tag }}*.tar.gz
-          swift-hello/.build/release/swift-hello
+          swift-hello/
